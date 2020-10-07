@@ -18,7 +18,7 @@ type Frame struct {
 
 // Error provides more structured information about a Go error.
 type Error struct {
-	err     interface{}
+	err     error
 	Message string
 	Class   string
 	Stack   []*Frame
@@ -26,6 +26,10 @@ type Error struct {
 
 func (e Error) Error() string {
 	return e.Message
+}
+
+func (e Error) Unwrap() error {
+	return e.err
 }
 
 func NewError(msg interface{}) Error {
