@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/url"
 	"os"
+	"reflect"
 	"regexp"
 	"time"
 
@@ -47,9 +48,19 @@ type Notice struct {
 	CGIData      CGIData
 	URL          string
 	Fingerprint  string
+	Causes       []error
 }
 
 func (n *Notice) asJSON() *hash {
+	causes := make([]hash, 0, len(n.Causes))
+
+	for _, err := range n.Causes {
+		causes = append(causes, map[string]interface{}{
+			"class":   reflect.TypeOf(err).String(),
+			"message": err.Error(),
+		})
+	}
+
 	return &hash{
 		"api_key": n.APIKey,
 		"notifier": &hash{
@@ -64,6 +75,7 @@ func (n *Notice) asJSON() *hash {
 			"tags":        n.Tags,
 			"backtrace":   n.Backtrace,
 			"fingerprint": n.Fingerprint,
+			"causes":      causes,
 		},
 		"request": &hash{
 			"context":  n.Context,
@@ -155,6 +167,29 @@ func newNotice(config *Configuration, err Error, extra ...interface{}) *Notice {
 		Backtrace:    composeStack(err.Stack, config.Root),
 		ProjectRoot:  config.Root,
 		Context:      Context{},
+	}
+
+	var cause error = err
+	for {
+		// Don't include any Error instances in the causes since they're never they
+		// should never be the cause of an issue instead providing annotations on
+		// errors.
+		if hb, ok := cause.(Error); ok {
+			cause = hb.Unwrap()
+
+			continue
+		}
+
+		// Add the error to the list of causes
+		notice.Causes = append(notice.Causes, cause)
+
+		w, ok := cause.(interface{ Unwrap() error })
+		if !ok {
+			break
+		}
+
+		// Move to the next in the chain
+		cause = w.Unwrap()
 	}
 
 	for _, thing := range extra {
